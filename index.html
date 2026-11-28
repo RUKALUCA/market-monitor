@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>全球股市行情监控</title>
+<style>
+:root{--up:#1a8a3a;--down:#d0312d;--bg:#fff;--alt:#f4f5f8;--line:#e3e5ea;--hl:#fff4c2;--muted:#888}
+body.cn{--up:#d0312d;--down:#1a8a3a}
+*{box-sizing:border-box}
+body{margin:0;font:13px/1.45 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif;color:#222;background:var(--bg)}
+header{padding:12px 18px 6px;border-bottom:1px solid var(--line);position:sticky;top:0;background:#fff;z-index:5}
+h1{font-size:20px;margin:0 8px 0 0;display:inline-block}
+.meta{color:var(--muted);font-size:12px}
+.chips{margin:6px 0 4px;display:flex;flex-wrap:wrap;gap:4px}
+.chip{font-size:11px;padding:1px 7px;border-radius:9px;background:#eee;color:#666;white-space:nowrap}
+.chip.live{background:#dff3e4;color:#16692e}
+.bar{display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center;margin-top:6px}
+.tabs button{border:1px solid var(--line);background:#fff;padding:4px 12px;cursor:pointer;border-radius:4px;margin-right:2px}
+.tabs button.on{background:#2b4c7e;color:#fff;border-color:#2b4c7e}
+input[type=number]{width:72px}
+input,select,button{font:inherit}
+label{white-space:nowrap}
+.btn{border:1px solid #2b4c7e;color:#2b4c7e;background:#fff;padding:3px 10px;border-radius:4px;cursor:pointer}
+main{padding:0 18px 30px}
+table{border-collapse:collapse;width:100%;margin-top:8px}
+th{position:sticky;top:var(--hh,140px);background:#fff;z-index:2;text-align:right;font-weight:600;padding:7px 6px;border-bottom:2px solid var(--line);cursor:pointer;white-space:nowrap;user-select:none}
+th.l,td.l{text-align:left}
+th.sorted::after{content:" ▼";font-size:10px}
+th.sorted.asc::after{content:" ▲"}
+td{padding:6px 6px;text-align:right;border-bottom:1px solid var(--line);white-space:nowrap}
+tbody tr.r:nth-child(4n+3){background:var(--alt)}
+tr.r{cursor:pointer}
+tr.r:hover{background:#eaf0fb!important}
+tr.alert{background:var(--hl)!important}
+tr.stale td{color:#aaa}
+.tk{color:#2b6b2e;font-weight:600}
+.up{color:var(--up)}.down{color:var(--down)}
+.b{font-weight:700}
+.biz{max-width:260px;overflow:hidden;text-overflow:ellipsis;color:#555}
+.lq{font-size:10px;color:#b46b00;border:1px solid #e8c27a;border-radius:3px;padding:0 3px;margin-left:4px}
+.det td{white-space:normal;text-align:left;background:#fafbfd;color:#333;padding:10px 14px}
+.det b{color:#2b4c7e}
+.more{margin:12px auto;display:block}
+#adv{display:none;margin-top:6px;padding:8px 10px;background:#f6f8fc;border:1px solid var(--line);border-radius:6px}
+#adv.on{display:flex;flex-wrap:wrap;gap:6px 18px;align-items:center}
+#adv .grp b{font-weight:600;margin-right:6px;color:#2b4c7e}
+#err{color:#c00}
+@media (max-width:800px){.hide-m{display:none}}
+</style>
+</head>
+<body>
+<header>
+  <h1>全球股市行情监控</h1>
+  <span class="meta" id="meta">加载中……</span> <span id="err"></span>
+  <div class="chips" id="chips"></div>
+  <div class="bar">
+    <span class="tabs" id="tabs"></span>
+    <select id="country" style="display:none"></select>
+    <select id="sec" title="板块"></select>
+    <select id="ind" title="细分行业" style="max-width:220px"></select>
+    <input id="q" placeholder="搜索代码/名称/业务" style="width:170px">
+    <label>20日均额≥ <input type="number" id="minTv" step="50">千€</label>
+    <label>今日额≥ <input type="number" id="minTo" step="50">千€</label>
+    <label><input type="checkbox" id="hideLq">隐藏流动性较差</label>
+    <label><input type="checkbox" id="hideAdr">隐藏ADR/外国公司</label>
+    <label title="持有上市股票/债券/实物商品的封闭式基金（英国投资信托、加拿大分拆基金、澳洲LIC、实物信托等），走势与ETF相近；私募股权、基础设施、房地产类保留"><input type="checkbox" id="hideFd">隐藏投资信托</label>
+    <label><input type="checkbox" id="todayOnly">只看今日有成交</label>
+    <label><input type="checkbox" id="alertOnly">只看异动</label>
+    <button class="btn" id="advBtn">高级筛选：市值/总部/业务地区 ▸</button>
+  </div>
+  <div id="adv">
+    <span class="grp"><b>市值档位</b>
+      <label><input type="checkbox" class="cap" value="L">大盘(≥$100亿)</label>
+      <label><input type="checkbox" class="cap" value="M">中盘($20–100亿)</label>
+      <label><input type="checkbox" class="cap" value="S">小盘($3–20亿)</label>
+      <label><input type="checkbox" class="cap" value="X">微盘(&lt;$3亿)</label></span>
+    <span class="grp"><b>总部所在国</b><select id="hq"></select></span>
+    <span class="grp"><b>业务涉及地区</b><select id="rg"></select>
+      <label title="业务简介只提到这一个地区"><input type="checkbox" id="rgOnly">仅该地区</label></span>
+    <span class="grp"><b>州/省/县</b><select id="sr"></select>
+      <label title="业务只在不超过 3 个州/省/县（美、日、加、澳、英）"><input type="checkbox" id="locOnly">仅本地型</label></span>
+    <button class="btn" id="advReset">清除高级筛选</button>
+    <span class="meta">业务地区依据中文业务简介中提到的国家/地区归类，简介未提及时按总部所在地；州/省/县依据英文公司简介里提到的本国州、县（日本另参考公司名），提到“全国/国际/海外”的不标注，只覆盖美日加澳英。仅供粗略筛选。</span>
+  </div>
+  <div class="bar">
+    <span>异动: 涨幅≥ <input type="number" id="aCh" step="1">% 且 量比≥ <input type="number" id="aVr" step="0.5"></span>
+    <label><input type="checkbox" id="aDown">跌幅也提醒</label>
+    <span title="新股量比常常缺失，单独按涨跌幅提醒">新股: 涨跌幅≥ <input type="number" id="iCh" step="1">% 且今日额≥ <input type="number" id="iMinTo" step="50">千€</span>
+    <label><input type="checkbox" id="iNotify">新股上市/异动提醒</label>
+    <label><input type="checkbox" id="cn">红涨绿跌</label>
+    <button class="btn" id="notify">开启浏览器通知</button>
+    <button class="btn" id="export">导出当前榜单 Excel</button>
+    <a class="btn" href="ipo.html" style="text-decoration:none">近一年新股列表 →</a>
+    <span class="meta" id="count"></span>
+  </div>
+</header>
+<main>
+<table>
+<thead><tr id="head"></tr></thead>
+<tbody id="body"></tbody>
+</table>
+<button class="btn more" id="more" style="display:none">显示更多</button>
+<p class="meta">数据来自 Yahoo Finance 免费报价：美股、伦敦、德国等约延迟 15 分钟，东京约 20 分钟，部分欧洲交易所接近实时。量比 = 今日成交量 ÷ 10 日均量，按已交易时间折算。股票池与“主要业务/近期催化剂”来自本地指数表格。仅供参考，不构成投资建议。</p>
+</main>
+<script>
+const EXN={NMS:'美国',NYQ:'美国',NGM:'美国',NCM:'美国',ASE:'美国',BTS:'美国',PCX:'美国',LSE:'伦敦',JPX:'东京',GER:'德国',PAR:'巴黎',AMS:'阿姆斯特丹',BRU:'布鲁塞尔',LIS:'里斯本',ISE:'都柏林',MIL:'米兰',MCE:'马德里',EBS:'瑞士',VIE:'维也纳',STO:'斯德哥尔摩',HEL:'赫尔辛基',CPH:'哥本哈根',OSL:'奥斯陆',WSE:'华沙',ATH:'雅典',BUD:'布达佩斯',PRA:'布拉格',BVB:'布加勒斯特',SAO:'圣保罗',MEX:'墨西哥',SGO:'智利',BUE:'阿根廷',BVC:'哥伦比亚',TOR:'多伦多',VAN:'多伦多创业板',ASX:'悉尼'};
+const MK={ALL:'全部',US:'美国',UK:'英国',JP:'日本',CA:'加拿大',AU:'澳大利亚',EU:'欧洲',LA:'拉美',IPO:'新股',SPAC:'SPAC'};
+const MKN={US:'美国',UK:'英国',JP:'日本',CA:'加拿大',AU:'澳大利亚',EU:'欧洲',LA:'拉美'};
+const ZONE={EU:1,LA:1};
+const FPO={'高':3,'中':2,'低':1,'不足':0};
+const FPC={'高':'#c00','中':'#c77700','低':'#2a7a2a','不足':'#999'};
+function fpCell(s){if(!s.fp)return'<span class="meta">—</span>';return`<span title="${esc(s.fpx||'')}" style="color:${FPC[s.fp]};font-weight:${s.fp==='高'?600:400}">${s.fp==='不足'?'资料不足':s.fp}${s.fps?'*':''}</span>`}
+const COLS=[
+ ['mk','市场','l'],['t','代码','l'],['n','名称','l'],['ind','细分行业','l',1],['p','现价'],['d','涨跌'],['ch','涨跌幅'],
+ ['o','开盘','',1],['h','最高','',1],['l','最低','',1],['v','成交量','',1],['to','今日成交额€'],['vr','量比'],
+ ['tv','20日均额€','',1],['mc','市值€','',1],['ytd','YTD(表格)','',1],['ts','时间'],['b','主要业务','l',1]];
+const COLS_IPO=[
+ ['mk','市场','l'],['t','代码','l'],['n','名称','l'],['ind','细分行业','l',1],['ld','上市日'],['age','天数'],['p','现价'],['ch','涨跌幅'],
+ ['to','今日成交额€'],['vr','量比','',1],['ipx','发行价/首开'],['si','较发行价'],['r1','首日涨幅','',1],['mc','市值€','',1],['fp','融资压力'],['ts','时间'],['b','主要业务','l',1]];
+const COLS_SPAC=[
+ ['t','代码','l'],['n','名称','l'],['stz','阶段'],['tg','标的','l',1],['ev','最新事件','l'],['evd','事件日'],
+ ['p','现价'],['ch','涨跌幅'],['vr','量比'],['prem','较信托溢价'],['tps','信托/股$'],['dl','最晚期限'],['ext','延期'],['ipo','IPO日','',1],['sig','信号']];
+const STC={'search':'#666','loi':'#c77700','signed':'#2a7a2a','review':'#2b4c7e','vote':'#7a3fb0','approved':'#0a7a7a','closed':'#999','term':'#999','liq':'#c00'};
+const premOf=r=>(r.q&&r.q.p&&r.s.tps)?r.q.p/r.s.tps-1:null;
+function sigOf(r){const s=r.s,base={loi:60,signed:80,review:88,vote:95,approved:97}[s.st]||0;
+ let sc=base;
+ if(s.st==='search'||s.st==='loi'){const left=(Date.parse(s.dl)-Date.now())/864e5;if(left<180)sc+=25;else if(left<365)sc+=12}
+ if((s.ext||0)+(s.extm||0)>=3)sc-=5;
+ if((Date.now()-Date.parse(s.sd))/864e5<=14&&s.st!=='search')sc+=5;
+ const pm=premOf(r);if(pm!=null&&pm>0.05)sc+=3;if(pm!=null&&pm<-0.03)sc-=3;
+ return sc}
+const DEF={tab:'ALL',country:'',sec:'',ind:'',caps:[],hq:'',rg:'',rgOnly:false,sr:'',locOnly:false,adv:false,q:'',minTv:200,minTo:0,hideLq:false,hideAdr:false,hideFd:true,todayOnly:true,alertOnly:false,aCh:8,aVr:3,aDown:false,iCh:15,iMinTo:50,iNotify:true,cn:false,sort:'ch',asc:false};
+let S=Object.assign({},DEF,JSON.parse(localStorage.getItem('mon_set')||'{}'));
+let STATIC=null,DATA=null,IPO=null,SPAC=null,ROWS=[],IROWS=[],SPROWS=[],FILTERED=[],LIMIT=300,OPEN=new Set();
+const $=id=>document.getElementById(id);
+const save=()=>localStorage.setItem('mon_set',JSON.stringify(S));
+const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+function fmtP(x){if(x==null)return'';const a=Math.abs(x);const d=a>=1000?2:a>=10?2:a>=1?3:4;return x.toLocaleString('fr-FR',{minimumFractionDigits:2,maximumFractionDigits:d}).replace(/\u202f/g,' ')}
+function fmtInt(x){return x==null?'':Math.round(x).toLocaleString('fr-FR').replace(/\u202f/g,' ')}
+function fmtBig(x){if(x==null)return'';const a=Math.abs(x);if(a>=1e8)return(x/1e8).toFixed(a>=1e10?0:1)+'亿';if(a>=1e4)return(x/1e4).toFixed(a>=1e6?0:1)+'万';return Math.round(x)+''}
+function fmtPct(x,dec=2){return x==null?'':(x>0?'+':'')+x.toFixed(dec)+'%'}
+function cls(x){return x>0?'up':x<0?'down':''}
+function fmtTs(ts){if(!ts)return'';const d=new Date(ts*1000),n=new Date();const hm=d.toTimeString().slice(0,5);return d.toDateString()===n.toDateString()?hm:(d.getMonth()+1)+'-'+d.getDate()+' '+hm}
+
+function localNow(tz){const p=new Intl.DateTimeFormat('en-GB',{timeZone:tz,hour:'2-digit',minute:'2-digit',weekday:'short',hour12:false}).formatToParts(new Date());const g=k=>p.find(x=>x.type===k).value;return{wd:g('weekday'),m:(+g('hour')%24)*60+(+g('minute'))}}
+const mins=s=>{const[a,b]=s.split(':');return a*60+ +b};
+function isLive(m){const n=localNow(m.tz);return!['Sat','Sun'].includes(n.wd)&&n.m>=mins(m.open)&&n.m<=mins(m.close)}
+
+function isIpoAlert(r){const q=r.q;if(!q||q.sd||q.ch==null||(q.to||0)<S.iMinTo*1000)return false;
+  return q.ch>=S.iCh||(S.aDown&&q.ch<=-S.iCh)||(q.vr!=null&&q.vr>=S.aVr&&q.ch>=S.aCh)}
+const ageOf=s=>s.d?Math.floor((Date.now()-Date.parse(s.d))/864e5):null;
+const sinceOf=r=>(r.q&&r.q.p&&r.s.ipx)?(r.q.p/r.s.ipx-1)*100:null;
+function isAlert(r){if(r.ipo)return isIpoAlert(r);if(!r.q||r.q.sd||r.q.ch==null||r.q.vr==null)return false;if(r.q.vr<S.aVr)return false;if((r.q.to||0)<S.minTv*1000)return false;return r.q.ch>=S.aCh||(S.aDown&&r.q.ch<=-S.aCh)}
+
+function build(){
+  const byT={};for(const s of STATIC.stocks)byT[s.t]=s;
+  ROWS=STATIC.stocks.map(s=>{const q=DATA.q[s.t];return{s,q,mk:ZONE[s.m]?s.cz:MK[s.m]}});
+  fillCountry();
+}
+function buildIpo(){IROWS=(IPO&&IPO.items||[]).map(s=>({s,q:DATA.q[s.t],mk:ZONE[s.m]?s.cz:MKN[s.m],ipo:true}));fillCountry()}
+function buildSpac(){SPROWS=(SPAC&&SPAC.items||[]).map(s=>({s,q:DATA.q[s.t],mk:'美国',spac:true}))}
+const scopeList=()=>(S.tab==='IPO'?(IPO&&IPO.items||[]):S.tab==='SPAC'?(SPAC&&SPAC.items||[]):STATIC.stocks).filter(inScope);
+function fillCountry(){
+  if(S.tab==='IPO'){if(!IPO)return;const c={};for(const s of IPO.items)c[s.m]=(c[s.m]||0)+1;
+    $('country').innerHTML='<option value="">全部市场</option>'+Object.keys(MKN).filter(k=>c[k]).map(k=>`<option value="${k}">${MKN[k]}（${c[k]}）</option>`).join('');
+    $('country').value=S.country;return}
+  if(!STATIC||!ZONE[S.tab])return;
+  const cs=[...new Set(STATIC.stocks.filter(s=>s.m===S.tab).map(s=>s.c+'|'+s.cz))].sort((a,b)=>a.slice(3).localeCompare(b.slice(3),'zh'));
+  $('country').innerHTML=`<option value="">全部${MK[S.tab]}国家</option>`+cs.map(c=>`<option value="${c.slice(0,2)}">${c.slice(3)}</option>`).join('');
+  $('country').value=S.country;
+}
+function val(r,k){const q=r.q||{},s=r.s;switch(k){case'mk':return r.mk;case't':return s.t;case'n':return s.n||'';case'ind':return s.ind||'';case'tv':return s.tv;case'ytd':return s.ytd;case'b':return s.b||'';case'ld':return s.d||'';case'age':return ageOf(s);case'ipx':return s.ipx;case'si':return sinceOf(r);case'r1':return s.r1;case'fp':return FPO[s.fp]??null;
+  case'stz':return s.stz;case'tg':return s.tg||'';case'ev':return((s.ev||[])[0]||{}).x||'';case'evd':return((s.ev||[])[0]||{}).d||'';case'prem':return premOf(r);case'tps':return s.tps;case'dl':return s.dl||'';case'ext':return(s.ext||0)+(s.extm||0);case'ipo':return s.ipo||'';case'sig':return sigOf(r);default:return q[k]}}
+
+function inScope(s){if(S.tab==='IPO')return!S.country||s.m===S.country;if(S.tab==='SPAC')return true;return(S.tab==='ALL'||s.m===S.tab)&&!(ZONE[S.tab]&&S.country&&s.c!==S.country)}
+function opts(list,cur,all){const c={};for(const x of list)c[x]=(c[x]||0)+1;
+  const ks=Object.keys(c).sort((a,b)=>c[b]-c[a]);if(cur&&!c[cur])ks.unshift(cur);
+  return`<option value="">${all}</option>`+ks.map(k=>`<option value="${esc(k)}"${k===cur?' selected':''}>${esc(k)}（${c[k]||0}）</option>`).join('')}
+const CAPS=[['L',1e10,Infinity],['M',2e9,1e10],['S',3e8,2e9],['X',0,3e8]];
+const CAPN={L:'大盘',M:'中盘',S:'小盘',X:'微盘'};
+function capOf(r){const mc=r.q&&r.q.mc,usd=DATA&&DATA.fx&&DATA.fx.USD;if(!mc||!usd)return null;const v=mc/usd;return(CAPS.find(c=>v>=c[1]&&v<c[2])||[null])[0]}
+function advCount(){return(S.caps.length?1:0)+(S.hq?1:0)+(S.rg?1:0)+(S.sr?1:0)+(S.locOnly?1:0)}
+function fillAdv(){
+  const sc=scopeList();
+  $('hq').innerHTML=opts(sc.map(s=>s.hq||'未知'),S.hq,'全部国家/地区');
+  const rc={};for(const s of sc)for(const g of(s.rg||[]))rc[g]=(rc[g]||0)+1;
+  const RG=['北美','欧洲','大中华','日本','亚太其他','拉美','中东非洲','全球','其他'];
+  $('rg').innerHTML='<option value="">全部地区</option>'+RG.filter(g=>rc[g]||g===S.rg).map(g=>`<option value="${g}"${g===S.rg?' selected':''}>${g}（${rc[g]||0}）</option>`).join('');
+  document.querySelectorAll('.cap').forEach(c=>c.checked=S.caps.includes(c.value));
+  $('rgOnly').checked=S.rgOnly;
+  const srs=sc.filter(s=>!S.locOnly||s.loc).flatMap(s=>s.sr||[]);
+  $('sr').innerHTML=srs.length||S.sr?opts(srs,S.sr,'全部州/省/县'):'<option value="">（当前市场无州县资料）</option>';
+  $('locOnly').checked=S.locOnly;
+  $('adv').classList.toggle('on',S.adv);
+  $('advBtn').textContent=(S.adv?'高级筛选：市值/总部/业务地区 ▾':'高级筛选：市值/总部/业务地区 ▸')+(advCount()?` (${advCount()})`:'');
+}
+function fillSector(){
+  fillAdv();
+  const sc=scopeList();
+  $('sec').innerHTML=opts(sc.map(s=>s.sec||'未分类'),S.sec,'全部板块');
+  $('ind').innerHTML=opts(sc.filter(s=>!S.sec||s.sec===S.sec).map(s=>s.ind||'未分类'),S.ind,'全部细分行业');
+}
+function render(){
+  if(!STATIC||!DATA)return;
+  const isI=S.tab==='IPO',isS=S.tab==='SPAC';if(isI&&!IPO)return;if(isS&&!SPAC)return;
+  fillSector();
+  const q=S.q.trim().toLowerCase();
+  const cols=isI?COLS_IPO:isS?COLS_SPAC:COLS;
+  let rows=(isI?IROWS:isS?SPROWS:ROWS).filter(r=>{const s=r.s;
+    if(!inScope(s))return false;
+    if(!isS){
+    if(S.sec&&s.sec!==S.sec)return false;
+    if(S.ind&&s.ind!==S.ind)return false;
+    if(S.caps.length&&!S.caps.includes(capOf(r)))return false;
+    if(S.hq&&s.hq!==S.hq)return false;
+    if(S.rg&&!(s.rg||[]).includes(S.rg))return false;
+    if(S.rg&&S.rgOnly&&(s.rg||[]).length!==1)return false;
+    if(S.sr&&!(s.sr||[]).includes(S.sr))return false;
+    if(S.locOnly&&!s.loc)return false;
+    if(S.hideLq&&s.lq)return false;
+    if(S.hideAdr&&s.adr)return false;
+    if(S.hideFd&&s.fd)return false;
+    }
+    if(!isI&&!isS&&(s.tv||0)<S.minTv*1000)return false;
+    if(S.minTo>0&&((r.q&&!r.q.sd&&r.q.to)||0)<S.minTo*1000)return false;
+    if(S.todayOnly&&(!r.q||r.q.sd))return false;
+    if(S.alertOnly&&!isAlert(r))return false;
+    if(q&&!(s.t.toLowerCase().includes(q)||(s.n||'').toLowerCase().includes(q)||(s.b||'').toLowerCase().includes(q)||(s.ind||'').includes(q)||(s.tg||'').toLowerCase().includes(q)))return false;
+    return true});
+  const k=S.sort,dir=S.asc?1:-1;
+  rows.sort((a,b)=>{let x=val(a,k),y=val(b,k);if(x==null&&y==null)return 0;if(x==null)return 1;if(y==null)return-1;return typeof x==='string'?dir*x.localeCompare(y,'zh'):dir*(x-y)});
+  FILTERED=rows;
+  const na=rows.filter(isAlert).length;
+  $('count').textContent=`共 ${rows.length} 只，异动 ${na} 只`;
+  $('head').innerHTML=cols.map(([k,t,c,m])=>`<th data-k="${k}" class="${c||''} ${m?'hide-m':''} ${S.sort===k?'sorted'+(S.asc?' asc':''):''}">${t}</th>`).join('');
+  const out=[];
+  for(const r of rows.slice(0,LIMIT)){const s=r.s,qq=r.q||{};const c=cls(qq.ch);
+    if(isI){out.push(ipoRow(r));continue}
+    if(isS){out.push(spacRow(r));continue}
+    out.push(`<tr class="r ${isAlert(r)?'alert':''} ${qq.sd?'stale':''}" data-t="${esc(s.t)}">
+<td class="l">${esc(r.mk)}</td><td class="l tk">${esc(s.t)}</td><td class="l">${esc((s.n||'').slice(0,28))}${s.adr?'<span class="lq" style="color:#2b4c7e;border-color:#9db3d6">ADR</span>':''}${s.lq?'<span class="lq">流动性差</span>':''}</td>
+<td class="l hide-m" style="color:#555">${esc(s.ind)}</td>
+<td class="b">${fmtP(qq.p)}</td><td class="${c}">${qq.d==null?'':(qq.d>0?'+':'')+fmtP(qq.d)}</td><td class="${c} b">${fmtPct(qq.ch)}</td>
+<td class="hide-m">${fmtP(qq.o)}</td><td class="hide-m">${fmtP(qq.h)}</td><td class="hide-m">${fmtP(qq.l)}</td><td class="hide-m">${fmtInt(qq.v)}</td>
+<td>${fmtBig(qq.to)}</td><td class="${qq.vr>=S.aVr?'b':''}">${qq.vr==null?'':qq.vr.toFixed(2)}</td>
+<td class="hide-m">${fmtBig(s.tv)}</td><td class="hide-m">${fmtBig(qq.mc)}</td><td class="hide-m ${cls(s.ytd)}">${s.ytd==null?'':fmtPct(s.ytd*100,0)}</td>
+<td>${fmtTs(qq.ts)}${qq.dl?'<span class="meta"> ('+qq.dl+'分)</span>':''}</td><td class="l biz hide-m" title="${esc(s.b)}">${esc(s.b)}</td></tr>`);
+    if(OPEN.has(s.t))out.push(`<tr class="det"><td colspan="${COLS.length}"><b>${esc(s.n)}</b>（${esc(s.t)}，${esc(r.mk)}，${esc(EXN[qq.ex]||qq.ex||'')}，${esc(qq.cur||'')}）　板块：${esc(s.sec||'')} / ${esc(s.ind||'')}　总部：${esc(s.hq||'—')}　业务地区：${esc((s.rg||[]).join('、')||'—')}${(s.sr||[]).length?'　州/省/县：'+esc(s.sr.join('、'))+(s.loc?'（本地型）':''):''}　市值档位：${CAPN[capOf(r)]||'—'}　P/E：${s.pe?s.pe.toFixed(1):'—'}　近1月：${s.r1m==null?'—':fmtPct(s.r1m*100,1)}　YTD：${s.ytd==null?'—':fmtPct(s.ytd*100,1)}　昨收：${fmtP(qq.pc)}　10日均量：${fmtInt(qq.av)}
+<br><b>主要业务：</b>${esc(s.b||'—')}<br><b>近期催化剂：</b>${esc(s.k||'—')}<br><a href="https://finance.yahoo.com/quote/${encodeURIComponent(s.t)}" target="_blank">Yahoo 页面</a></td></tr>`)}
+  $('body').innerHTML=out.join('');
+  $('minTv').parentElement.style.opacity=(isI||isS)?.4:1;
+  $('more').style.display=rows.length>LIMIT?'block':'none';
+  $('more').textContent=`显示更多（还有 ${rows.length-LIMIT} 只）`;
+  document.documentElement.style.setProperty('--hh',document.querySelector('header').offsetHeight+'px');
+}
+
+function ipoRow(r){const s=r.s,qq=r.q||{},c=cls(qq.ch),si=sinceOf(r),a=ageOf(s);
+  const kind=s.kind==='IPO'?'<span class="lq" style="color:#7a3fb0;border-color:#c9a8e6">IPO</span>':'';
+  let h=`<tr class="r ${isAlert(r)?'alert':''} ${qq.sd?'stale':''}" data-t="${esc(s.t)}">
+<td class="l">${esc(r.mk)}</td><td class="l tk">${esc(s.t)}</td><td class="l">${esc((s.n||'').slice(0,28))}${kind}${a!=null&&a<=7?'<span class="lq" style="color:#c00;border-color:#f0a0a0">新</span>':''}</td>
+<td class="l hide-m" style="color:#555">${esc(s.ind)}</td><td>${esc(s.d||'')}</td><td>${a??''}</td>
+<td class="b">${fmtP(qq.p)}</td><td class="${c} b">${fmtPct(qq.ch)}</td><td>${fmtBig(qq.to)}</td>
+<td class="hide-m">${qq.vr==null?'':qq.vr.toFixed(2)}</td><td title="${esc(s.ipk||'')}">${fmtP(s.ipx)}<span class="meta">${s.ipk==='发行价'?' 发':s.ipx?' 开':''}</span></td>
+<td class="${cls(si)} b">${si==null?'':fmtPct(si,1)}</td><td class="hide-m ${cls(s.r1)}">${s.r1==null?'':fmtPct(s.r1,1)}</td>
+<td class="hide-m">${fmtBig(qq.mc)}</td><td>${fpCell(s)}</td><td>${fmtTs(qq.ts)}${qq.dl?'<span class="meta"> ('+qq.dl+'分)</span>':''}</td>
+<td class="l biz hide-m" title="${esc(s.b)}">${esc(s.b)}</td></tr>`;
+  if(OPEN.has(s.t))h+=`<tr class="det"><td colspan="${COLS_IPO.length}"><b>${esc(s.n)}</b>（${esc(s.t)}，${esc(r.mk)}，${esc(EXN[qq.ex||s.ex]||qq.ex||s.ex||'')}，${esc(qq.cur||s.cur||'')}）　上市日：${esc(s.d)}（第 ${a??'—'} 天）　类型：${s.kind==='IPO'?'IPO（Nasdaq 日历确认）':s.kind==='新上市'?'新上市（非 IPO：可能为分拆/直接上市/转板）':'新上市（IPO/分拆/转板未区分）'}
+<br>${esc(s.ipk||'发行价')}：${fmtP(s.ipx)||'—'}　首日：开 ${fmtP(s.o1)||'—'} / 收 ${fmtP(s.c1)||'—'}（${s.r1==null?'—':fmtPct(s.r1,1)}）　上市以来最高 ${fmtP(s.hi)||'—'} / 最低 ${fmtP(s.lo)||'—'}　较发行价：${si==null?'—':fmtPct(si,1)}${s.amt?'　募资额：$'+fmtBig(s.amt):''}${s.sh?'　发行股数：'+fmtBig(s.sh):''}
+<br>板块：${esc(s.sec||'')} / ${esc(s.ind||'')}　总部：${esc(s.hq||'—')}　业务地区：${esc((s.rg||[]).join('、')||'—')}${(s.sr||[]).length?'　州/省/县：'+esc(s.sr.join('、'))+(s.loc?'（本地型）':''):''}　市值档位：${CAPN[capOf(r)]||'—'}　昨收：${fmtP(qq.pc)}
+<br><b>融资压力：</b>${s.fp?(s.fp==='不足'?'资料不足':s.fp)+'（'+esc(s.fpx||'')+'）':'尚未取得财务数据'}
+<br><b>主要业务：</b>${esc(s.b||'—')}<br><a href="https://finance.yahoo.com/quote/${encodeURIComponent(s.t)}" target="_blank">Yahoo 页面</a></td></tr>`;
+  return h}
+
+function spacRow(r){const s=r.s,qq=r.q||{},c=cls(qq.ch),pm=premOf(r),e=(s.ev||[])[0]||{},nx=(s.ext||0)+(s.extm||0);
+  let h=`<tr class="r ${qq.sd?'stale':''}" data-t="${esc(s.t)}">
+<td class="l tk">${esc(s.t)}</td><td class="l" title="${esc(s.n)}">${esc((s.n||'').slice(0,26))}</td>
+<td style="color:${STC[s.st]||'#333'};font-weight:600;white-space:nowrap">${esc(s.stz)}</td>
+<td class="l hide-m" title="${esc(s.tg||'')}">${esc((s.tg||'—').slice(0,24))}</td>
+<td class="l" title="${esc(e.x||'')}">${esc((e.x||'—').slice(0,22))}</td><td>${esc(e.d||'')}</td>
+<td class="b">${fmtP(qq.p)}</td><td class="${c} b">${fmtPct(qq.ch)}</td><td>${qq.vr==null?'':qq.vr.toFixed(2)}</td>
+<td class="${pm>0.05?'up b':pm<-0.02?'down':''}">${pm==null?'':fmtPct(pm*100,1)}</td>
+<td>${s.tps?'$'+s.tps.toFixed(2):''}${s.tpx?'<span class="meta">*</span>':''}</td>
+<td style="white-space:nowrap">${esc(s.dl||'')}${s.dle?'<span class="meta">*</span>':''}</td><td>${nx||''}</td>
+<td class="hide-m">${esc(s.ipo||'')}</td><td class="b">${sigOf(r)}</td></tr>`;
+  if(OPEN.has(s.t)){const evs=(s.ev||[]).slice(0,8).map(x=>`<a href="${esc(x.u)}" target="_blank">${esc(x.d)} ${esc(x.x)}</a>`).join('<br>');
+    h+=`<tr class="det"><td colspan="${COLS_SPAC.length}"><b>${esc(s.n)}</b>（${esc(s.t)}${(s.tk||[]).length>1?'，全部代码：'+esc(s.tk.join(' / ')):''}）　阶段：<span style="color:${STC[s.st]}">${esc(s.stz)}</span>　IPO：${esc(s.ipo||'—')}　${s.loi?'意向书：'+esc(s.loi)+'　':''}${s.deal?'签约：'+esc(s.deal)+'　':''}标的公司：<b>${esc(s.tg||'尚未公布')}</b>
+<br>最晚完成期限：${esc(s.dl||'—')}${s.dle?'（按 IPO+24 个月估算）':'（文件披露）'}　延期：股东会 ${s.ext||0} 次 / 月度 ${s.extm||0} 次　信托每股：${s.tps?'$'+s.tps.toFixed(2):'—'}${s.tpx?'（按 $10.10+利息估算，* 号同理）':''}　较信托溢价：${pm==null?'—':fmtPct(pm*100,1)}
+<br><b>近期 SEC 申报：</b><br>${evs||'—'}
+<br><a href="https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=${s.cik}&type=&dateb=&owner=include&count=40" target="_blank">EDGAR 全部申报</a>　<a href="https://finance.yahoo.com/quote/${encodeURIComponent(s.t)}" target="_blank">Yahoo 页面</a></td></tr>`}
+  return h}
+function notifyIpo(){
+  if(!S.iNotify||!IPO)return;
+  const ok=window.Notification&&Notification.permission==='granted';
+  let known=JSON.parse(localStorage.getItem('mon_ipo_known')||'null');
+  const recent=IROWS.filter(r=>ageOf(r.s)!=null&&ageOf(r.s)<=4);
+  if(known===null)known=IROWS.filter(r=>ageOf(r.s)>4).map(r=>r.s.t);
+  const fresh=recent.filter(r=>!known.includes(r.s.t));
+  if(fresh.length){known.push(...fresh.map(r=>r.s.t));
+    if(ok)new Notification(`新股上市 ${fresh.length} 只`,{body:fresh.slice(0,6).map(r=>`${r.mk} ${r.s.t} ${r.s.n||''}（${r.s.d}）`).join('\n')})}
+  localStorage.setItem('mon_ipo_known',JSON.stringify(known.slice(-3000)));
+  const day=new Date().toDateString();let seen=JSON.parse(localStorage.getItem('mon_ipo_seen')||'{}');if(seen.day!==day)seen={day,t:[]};
+  const mv=IROWS.filter(r=>isIpoAlert(r)&&!(S.hideFd&&r.s.fd)&&!seen.t.includes(r.s.t));
+  if(mv.length){seen.t.push(...mv.map(r=>r.s.t));localStorage.setItem('mon_ipo_seen',JSON.stringify(seen));
+    if(ok){const top=mv.sort((a,b)=>Math.abs(b.q.ch)-Math.abs(a.q.ch)).slice(0,5);
+      new Notification(`新股异动 ${mv.length} 只`,{body:top.map(r=>`${r.s.t} ${r.s.n||''} ${fmtPct(r.q.ch)}，较发行价 ${sinceOf(r)==null?'—':fmtPct(sinceOf(r),0)}`).join('\n')})}
+    document.title=`(${mv.length}) 新股异动 - 全球股市行情监控`}
+}
+
+function notifySpac(){
+  if(!S.iNotify||!SPAC)return;
+  const ok=window.Notification&&Notification.permission==='granted';
+  const t0=new Date().toISOString().slice(0,10);
+  const day=new Date().toDateString();let seen=JSON.parse(localStorage.getItem('mon_spac_seen')||'{}');if(seen.day!==day)seen={day,loi:[],deal:[],pm:[]};
+  const lois=SPAC.items.filter(s=>s.loi===t0&&!seen.loi.includes(s.t));
+  const deals=SPAC.items.filter(s=>s.deal===t0&&!seen.deal.includes(s.t));
+  const pms=SPROWS.filter(r=>{const pm=premOf(r);return pm!=null&&pm>0.05&&r.q&&r.q.vr!=null&&r.q.vr>=2&&!r.q.sd&&!seen.pm.includes(r.s.t)});
+  seen.loi.push(...lois.map(s=>s.t));seen.deal.push(...deals.map(s=>s.t));seen.pm.push(...pms.map(r=>r.s.t));
+  localStorage.setItem('mon_spac_seen',JSON.stringify(seen));
+  if(ok){
+    if(lois.length)new Notification(`SPAC 新签意向书 ${lois.length} 家`,{body:lois.slice(0,6).map(s=>`${s.t}${s.tg?' → '+s.tg:''}`).join('\n')});
+    if(deals.length)new Notification(`SPAC 新签合并协议 ${deals.length} 家`,{body:deals.slice(0,6).map(s=>`${s.t} → ${s.tg||''}`).join('\n')});
+    if(pms.length)new Notification(`SPAC 溢价放量 ${pms.length} 只`,{body:pms.slice(0,6).map(r=>`${r.s.t} 溢价${fmtPct(premOf(r)*100,1)} 量比${r.q.vr.toFixed(1)}`).join('\n')})}
+}
+function renderMeta(){
+  if(!DATA)return;
+  const age=Math.round((Date.now()/1000-DATA.updated)/60);
+  $('meta').textContent=`数据更新 ${new Date(DATA.updated*1000).toLocaleString('zh-CN',{hour12:false})}（${age} 分钟前，程序每 ${DATA.interval_min} 分钟刷新交易中的市场）`;
+  const g={};for(const[ex,m]of Object.entries(DATA.markets)){const n=EXN[ex]||ex;g[n]=g[n]||{m,live:false};if(isLive(m))g[n].live=true}
+  $('chips').innerHTML=Object.entries(g).map(([n,x])=>`<span class="chip ${x.live?'live':''}" title="当地 ${x.m.open}-${x.m.close}">${n} ${x.live?'交易中':'休市'}</span>`).join('');
+}
+
+function notifyNew(){
+  const day=new Date().toDateString();let seen=JSON.parse(localStorage.getItem('mon_seen')||'{}');if(seen.day!==day)seen={day,t:[]};
+  const fresh=ROWS.filter(r=>isAlert(r)&&!(S.hideFd&&r.s.fd)&&!seen.t.includes(r.s.t)&&(S.tab==='ALL'||r.s.m===S.tab));
+  if(fresh.length){seen.t.push(...fresh.map(r=>r.s.t));localStorage.setItem('mon_seen',JSON.stringify(seen));
+    if(window.Notification&&Notification.permission==='granted'){const top=fresh.sort((a,b)=>Math.abs(b.q.ch)-Math.abs(a.q.ch)).slice(0,5);
+      new Notification(`新增异动 ${fresh.length} 只`,{body:top.map(r=>`${r.s.t} ${r.s.n||''} ${fmtPct(r.q.ch)} 量比${r.q.vr.toFixed(1)}`).join('\n')})}
+    document.title=`(${fresh.length}) 新异动 - 全球股市行情监控`}
+}
+
+function loadScript(src){return new Promise((ok,no)=>{const e=document.createElement('script');e.src=src+'?t='+Date.now();e.onload=()=>{e.remove();ok()};e.onerror=()=>{e.remove();no(new Error('无法加载 '+src))};document.head.appendChild(e)})}
+async function fetchJson(name){const r=await fetch(name+'?t='+Date.now(),{cache:'no-store'});if(!r.ok)throw new Error(name+' '+r.status);return r.json()}
+async function load(){
+  try{
+    let d;
+    if(location.protocol==='file:'){await loadScript('data.js');d=window.__DATA;
+      if(!STATIC||STATIC._ver!==d.static_ver){await loadScript('static.js');STATIC=window.__STATIC;STATIC._ver=d.static_ver;DATA=d;build()}}
+    else{d=await fetchJson('data.json');if(!STATIC||STATIC._ver!==d.static_ver){STATIC=await fetchJson('static.json');STATIC._ver=d.static_ver;DATA=d;build()}}
+    if(d.ipo_ver&&(!IPO||IPO._ver!==d.ipo_ver)){
+      if(location.protocol==='file:'){await loadScript('ipo.js');IPO=window.__IPO}else IPO=await fetchJson('ipo.json');
+      IPO._ver=d.ipo_ver;DATA=d;buildIpo()}
+    if(d.spac_ver&&(!SPAC||SPAC._ver!==d.spac_ver)){
+      if(location.protocol==='file:'){await loadScript('spac.js');SPAC=window.__SPAC}else SPAC=await fetchJson('spac.json');
+      SPAC._ver=d.spac_ver;DATA=d;buildSpac()}
+    DATA=d;ROWS.forEach(r=>r.q=DATA.q[r.s.t]);IROWS.forEach(r=>r.q=DATA.q[r.s.t]);SPROWS.forEach(r=>r.q=DATA.q[r.s.t]);$('err').textContent='';renderMeta();render();notifyNew();notifyIpo();notifySpac();
+  }catch(e){$('err').textContent='数据加载失败：'+e.message}
+}
+
+async function exportXlsx(){
+  const all=FILTERED;
+  if(S.tab==='SPAC'){const head=['代码','名称','阶段','标的公司','最新事件','事件日期','IPO日期','最晚期限','期限为估算','延期(股东会)','延期(月度)','信托/股$','信托为估算','现价','涨跌幅%','量比','较信托溢价%','信号分','CIK','全部代码'];
+    const data=all.map(r=>{const q=r.q||{},s=r.s,e=(s.ev||[])[0]||{},pm=premOf(r);return[s.t,s.n,s.stz,s.tg,e.x,e.d,s.ipo,s.dl,s.dle?'是':'',s.ext||0,s.extm||0,s.tps,s.tpx?'是':'',q.p,q.ch,q.vr,pm==null?null:+(pm*100).toFixed(1),sigOf(r),s.cik,(s.tk||[]).join(' ')]});
+    return writeXlsx('SPAC_'+new Date().toISOString().slice(0,10),head,data,'SPAC')}
+  if(S.tab==='IPO'){const head=['市场','代码','名称','货币','上市日','上市天数','类型','发行价/首日开盘价','价格类型','首日开盘','首日收盘','首日涨幅%','现价','涨跌幅%','今日成交额€','量比','较发行价%','上市以来最高','上市以来最低','市值€','募资额$','融资压力','融资压力依据','板块','细分行业','总部所在国','业务涉及地区','主要业务'];
+    const data=all.map(r=>{const q=r.q||{},s=r.s,si=sinceOf(r);return[r.mk,s.t,s.n,q.cur||s.cur,s.d,ageOf(s),s.kind,s.ipx,s.ipk,s.o1,s.c1,s.r1,q.p,q.ch,q.to,q.vr,si==null?null:+si.toFixed(1),s.hi,s.lo,q.mc,s.amt,s.fp==='不足'?'资料不足':s.fp,s.fpx,s.sec,s.ind,s.hq,(s.rg||[]).join('、'),s.b]});
+    return writeXlsx('新股_'+new Date().toISOString().slice(0,10),head,data,'新股')}
+  const head=['市场','代码','名称','货币','现价','涨跌','涨跌幅%','开盘','最高','最低','成交量','今日成交额€','量比','20日均额€','市值€','YTD%','报价时间','异动','流动性较差','ADR/外国公司','板块','细分行业','市值档位','总部所在国','业务涉及地区','主要业务','近期催化剂'];
+  const data=all.map(r=>{const q=r.q||{},s=r.s;return[r.mk,s.t,s.n,q.cur,q.p,q.d,q.ch,q.o,q.h,q.l,q.v,q.to,q.vr,s.tv,q.mc,s.ytd==null?null:+(s.ytd*100).toFixed(1),q.ts?new Date(q.ts*1000).toLocaleString('zh-CN',{hour12:false}):'',isAlert(r)?'是':'',s.lq?'是':'',s.adr?'是':'',s.sec,s.ind,CAPN[capOf(r)]||'',s.hq,(s.rg||[]).join('、'),s.b,s.k]});
+  return writeXlsx('行情榜单_'+new Date().toISOString().slice(0,16).replace(/[-:T]/g,''),head,data,'榜单');
+}
+async function writeXlsx(fn,head,data,sheet){
+  try{if(!window.XLSX)await new Promise((ok,no)=>{const e=document.createElement('script');e.src='https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';e.onload=ok;e.onerror=no;document.head.appendChild(e)});
+    const ws=XLSX.utils.aoa_to_sheet([head,...data]);ws['!cols']=head.map((h,i)=>({wch:/主要业务|催化剂/.test(h)?60:i===2?28:12}));ws['!freeze']={xSplit:3,ySplit:1};
+    const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,sheet);XLSX.writeFile(wb,fn+'.xlsx')}
+  catch(e){const csv=[head,...data].map(r=>r.map(x=>x==null?'':/[",\n]/.test(String(x))?'"'+String(x).replace(/"/g,'""')+'"':x).join(',')).join('\n');
+    const a=document.createElement('a');a.href=URL.createObjectURL(new Blob(['\ufeff'+csv],{type:'text/csv'}));a.download=fn+'.csv';a.click()}
+}
+
+function init(){
+  $('tabs').innerHTML=Object.entries(MK).map(([k,n])=>`<button data-k="${k}">${n}</button>`).join('');
+  const syncTabs=()=>{[...$('tabs').children].forEach(b=>b.classList.toggle('on',b.dataset.k===S.tab));$('country').style.display=(ZONE[S.tab]||S.tab==='IPO')?'':'none';fillCountry()};
+  syncTabs();
+  $('tabs').onclick=e=>{const k=e.target.dataset.k;if(k){const was=S.tab;S.tab=k;S.country='';LIMIT=300;
+    const cols=k==='IPO'?COLS_IPO:k==='SPAC'?COLS_SPAC:COLS;
+    if(k==='IPO'&&was!=='IPO'){S.sort='ld';S.asc=false}
+    else if(k==='SPAC'&&was!=='SPAC'){S.sort='sig';S.asc=false}
+    else if(k!=='IPO'&&k!=='SPAC'&&!cols.some(c=>c[0]===S.sort)){S.sort='ch';S.asc=false}
+    save();syncTabs();render()}};
+  for(const id of['q','minTv','minTo','aCh','aVr','iCh','iMinTo']){$(id).value=S[id];$(id).oninput=()=>{S[id]=id==='q'?$(id).value:+$(id).value||0;LIMIT=300;save();render()}}
+  for(const id of['hideLq','hideAdr','hideFd','todayOnly','alertOnly','aDown','cn','iNotify']){$(id).checked=S[id];$(id).onchange=()=>{S[id]=$(id).checked;save();document.body.classList.toggle('cn',S.cn);render()}}
+  document.body.classList.toggle('cn',S.cn);
+  $('country').onchange=()=>{S.country=$('country').value;save();render()};
+  $('sec').onchange=()=>{S.sec=$('sec').value;S.ind='';LIMIT=300;save();render()};
+  $('ind').onchange=()=>{S.ind=$('ind').value;LIMIT=300;save();render()};
+  $('advBtn').onclick=()=>{S.adv=!S.adv;save();render()};
+  document.querySelectorAll('.cap').forEach(c=>c.onchange=()=>{S.caps=[...document.querySelectorAll('.cap:checked')].map(x=>x.value);LIMIT=300;save();render()});
+  $('hq').onchange=()=>{S.hq=$('hq').value;LIMIT=300;save();render()};
+  $('rg').onchange=()=>{S.rg=$('rg').value;LIMIT=300;save();render()};
+  $('rgOnly').onchange=()=>{S.rgOnly=$('rgOnly').checked;save();render()};
+  $('sr').onchange=()=>{S.sr=$('sr').value;LIMIT=300;save();render()};
+  $('locOnly').onchange=()=>{S.locOnly=$('locOnly').checked;LIMIT=300;save();render()};
+  $('advReset').onclick=()=>{S.caps=[];S.hq='';S.rg='';S.rgOnly=false;S.sr='';S.locOnly=false;save();render()};
+  $('head').onclick=e=>{const k=e.target.dataset.k;if(!k)return;if(S.sort===k)S.asc=!S.asc;else{S.sort=k;S.asc=['mk','t','n','ind','b','age','stz','tg','ev','evd','dl','ipo'].includes(k)}save();render()};
+  $('body').onclick=e=>{if(e.target.closest('a'))return;const tr=e.target.closest('tr.r');if(!tr)return;const t=tr.dataset.t;OPEN.has(t)?OPEN.delete(t):OPEN.add(t);render()};
+  $('more').onclick=()=>{LIMIT+=300;render()};
+  $('export').onclick=exportXlsx;
+  $('notify').onclick=async()=>{if(!window.Notification)return alert('此浏览器不支持通知');const p=await Notification.requestPermission();$('notify').textContent=p==='granted'?'通知已开启':'通知被拒绝'};
+  if(window.Notification&&Notification.permission==='granted')$('notify').textContent='通知已开启';
+  window.onfocus=()=>{document.title='全球股市行情监控'};
+  load();setInterval(load,3*60*1000);setInterval(renderMeta,60*1000);
+}
+init();
+</script>
+</body>
+</html>
